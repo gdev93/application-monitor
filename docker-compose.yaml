@@ -1,0 +1,17 @@
+services:
+  application-monitor:
+    build: .
+    container_name: application-monitor
+    restart: unless-stopped
+
+    # Environment variables
+    environment:
+      - INTERVAL_SECS=10
+      - CPU_ALARM_THRESHOLD=0
+      - MEMORY_ALARM_THRESHOLD=75
+      - TIME_ZONE=UTC
+      - DOCKER_SOCKET_PATH=var/host/run/docker.sock
+
+    # Volume mounts
+    volumes:
+      - /var/run/docker.sock:/var/host/run/docker.sock:ro
