@@ -38,8 +38,114 @@ def _escape_markdown_v2(text: str) -> str:
     return text
 
 
+def _create_cpu_alarm_message(container_name: str, cpu_percentage: float, threshold: float) -> str:
+    """
+    Create a CPU threshold violation alert message with emphasis
 
-def _create_resource_alert_message(container_name: str, cpu_percentage: str, mem_percentage: str) -> str:
+    Args:
+        container_name: Name of the container
+        cpu_percentage: Current CPU usage percentage
+        threshold: CPU threshold that was violated
+
+    Returns:
+        str: Formatted Markdown V2 message
+    """
+    # Escape special characters for Markdown V2
+    container_name_escaped = _escape_markdown_v2(container_name)
+    cpu_percentage_escaped = _escape_markdown_v2(f"{cpu_percentage:.2f}%")
+    threshold_escaped = _escape_markdown_v2(f"{threshold:.2f}%")
+
+    # Get current timestamp
+    timestamp = datetime.now(_SENDER_TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')
+    timestamp_escaped = _escape_markdown_v2(timestamp)
+
+    # Determine severity level
+    severity_ratio = cpu_percentage / threshold
+    if severity_ratio >= 1.5:
+        severity_emoji = "🔴"
+        severity_text = "CRITICAL"
+    elif severity_ratio >= 1.2:
+        severity_emoji = "🟠"
+        severity_text = "HIGH"
+    else:
+        severity_emoji = "🟡"
+        severity_text = "WARNING"
+
+    # Create the formatted message
+    formatted_message = f"""
+🚨 *CPU THRESHOLD VIOLATION* 🚨
+
+{severity_emoji} *{severity_text} ALERT*
+
+🐳 *Container:* `{container_name_escaped}`
+🕐 *Time:* {timestamp_escaped}
+
+🔥 *CPU USAGE VIOLATION:*
+📊 *Current Usage:* *{cpu_percentage_escaped}*
+⚠️ *Threshold:* {threshold_escaped}
+📈 *Violation:* *\\+{_escape_markdown_v2(f"{cpu_percentage - threshold:.2f}%")}*
+
+💡 *Action Required:* CPU usage has exceeded the configured threshold\\. Consider scaling or optimizing this container immediately\\.
+    """.strip()
+
+    return formatted_message
+
+
+def _create_memory_alarm_message(container_name: str, memory_percentage: float, threshold: float) -> str:
+    """
+    Create a memory threshold violation alert message with emphasis
+
+    Args:
+        container_name: Name of the container
+        memory_percentage: Current memory usage percentage
+        threshold: Memory threshold that was violated
+
+    Returns:
+        str: Formatted Markdown V2 message
+    """
+    # Escape special characters for Markdown V2
+    container_name_escaped = _escape_markdown_v2(container_name)
+    memory_percentage_escaped = _escape_markdown_v2(f"{memory_percentage:.2f}%")
+    threshold_escaped = _escape_markdown_v2(f"{threshold:.2f}%")
+
+    # Get current timestamp
+    timestamp = datetime.now(_SENDER_TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')
+    timestamp_escaped = _escape_markdown_v2(timestamp)
+
+    # Determine severity level
+    severity_ratio = memory_percentage / threshold
+    if severity_ratio >= 1.5:
+        severity_emoji = "🔴"
+        severity_text = "CRITICAL"
+    elif severity_ratio >= 1.2:
+        severity_emoji = "🟠"
+        severity_text = "HIGH"
+    else:
+        severity_emoji = "🟡"
+        severity_text = "WARNING"
+
+    # Create the formatted message
+    formatted_message = f"""
+🚨 *MEMORY THRESHOLD VIOLATION* 🚨
+
+{severity_emoji} *{severity_text} ALERT*
+
+🐳 *Container:* `{container_name_escaped}`
+🕐 *Time:* {timestamp_escaped}
+
+💾 *MEMORY USAGE VIOLATION:*
+📊 *Current Usage:* *{memory_percentage_escaped}*
+⚠️ *Threshold:* {threshold_escaped}
+📈 *Violation:* *\\+{_escape_markdown_v2(f"{memory_percentage - threshold:.2f}%")}*
+
+💡 *Action Required:* Memory usage has exceeded the configured threshold\\. Consider scaling or optimizing this container immediately\\.
+    """.strip()
+
+    return formatted_message
+
+
+
+def _create_resource_alert_message(container_name: str, cpu_percentage: str, mem_percentage: str, cpu_threshold: float = None, mem_threshold: float = None) -> str:
     """
     Create a resource alert message with emojis and formatting
 
@@ -47,6 +153,8 @@ def _create_resource_alert_message(container_name: str, cpu_percentage: str, mem
         container_name: Name of the container
         cpu_percentage: CPU usage percentage as string (e.g., "75.25%")
         mem_percentage: Memory usage percentage as string (e.g., "80.50%")
+        cpu_threshold: CPU threshold that was violated (optional)
+        mem_threshold: Memory threshold that was violated (optional)
 
     Returns:
         str: Formatted Markdown V2 message
@@ -60,23 +168,53 @@ def _create_resource_alert_message(container_name: str, cpu_percentage: str, mem
     timestamp = datetime.now(_SENDER_TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')
     timestamp_escaped = _escape_markdown_v2(timestamp)
 
+    # Create threshold violation details if thresholds are provided
+    threshold_info = ""
+    if cpu_threshold is not None and mem_threshold is not None:
+        cpu_threshold_escaped = _escape_markdown_v2(f"{cpu_threshold:.2f}%")
+        mem_threshold_escaped = _escape_markdown_v2(f"{mem_threshold:.2f}%")
+        threshold_info = f"""
+⚠️ *THRESHOLD VIOLATIONS:*
+🔥 *CPU Threshold:* {cpu_threshold_escaped}
+💾 *Memory Threshold:* {mem_threshold_escaped}
+
+"""
+
     # Create the formatted message
     formatted_message = f"""
-🚨 *RESOURCE ALERT* 🚨
+🚨 *RESOURCE THRESHOLD VIOLATIONS* 🚨
 
-⚠️ *CONTAINER REACHING LIMITS*
+🔴 *CRITICAL ALERT \\- MULTIPLE VIOLATIONS*
 
 🐳 *Container:* `{container_name_escaped}`
 🕐 *Time:* {timestamp_escaped}
 
-📊 *RESOURCE USAGE:*
-🔥 *CPU:* {cpu_percentage_escaped}
-💾 *Memory:* {mem_percentage_escaped}
+📊 *CURRENT RESOURCE USAGE:*
+🔥 *CPU:* *{cpu_percentage_escaped}*
+💾 *Memory:* *{mem_percentage_escaped}*
 
-💡 *Consider scaling or optimizing this container\\.*
+{threshold_info}💡 *URGENT ACTION REQUIRED:* Both CPU and memory usage have exceeded their configured thresholds\\. Immediate scaling or optimization is needed\\.
     """.strip()
 
     return formatted_message
+
+
+def send_resource_alert(container_name: str, cpu_percentage: str, mem_percentage: str, cpu_threshold: float = None, mem_threshold: float = None) -> bool:
+    """
+    Send a resource alert notification to Telegram
+
+    Args:
+        container_name: Name of the container reaching limits
+        cpu_percentage: CPU usage percentage as string (e.g., "75.25%")
+        mem_percentage: Memory usage percentage as string (e.g., "80.50%")
+        cpu_threshold: CPU threshold that was violated (optional)
+        mem_threshold: Memory threshold that was violated (optional)
+
+    Returns:
+        bool: True if alert was sent successfully, False otherwise
+    """
+    formatted_message = _create_resource_alert_message(container_name, cpu_percentage, mem_percentage, cpu_threshold, mem_threshold)
+    return _send_message(formatted_message)
 
 
 class _TelegramBot:
@@ -208,17 +346,33 @@ def _send_message(message: str, parse_mode: str = ParseMode.MARKDOWN_V2) -> bool
         return False
 
 
-def send_resource_alert(container_name: str, cpu_percentage: str, mem_percentage: str) -> bool:
+def send_cpu_alarm(container_name: str, cpu_percentage: float, threshold: float) -> bool:
     """
-    Send a resource alert notification to Telegram
+    Send a CPU threshold violation alert to Telegram
 
     Args:
-        container_name: Name of the container reaching limits
-        cpu_percentage: CPU usage percentage as string (e.g., "75.25%")
-        mem_percentage: Memory usage percentage as string (e.g., "80.50%")
+        container_name: Name of the container with CPU violation
+        cpu_percentage: Current CPU usage percentage
+        threshold: CPU threshold that was violated
 
     Returns:
         bool: True if alert was sent successfully, False otherwise
     """
-    formatted_message = _create_resource_alert_message(container_name, cpu_percentage, mem_percentage)
+    formatted_message = _create_cpu_alarm_message(container_name, cpu_percentage, threshold)
+    return _send_message(formatted_message)
+
+
+def send_memory_alert(container_name: str, memory_percentage: float, threshold: float) -> bool:
+    """
+    Send a memory threshold violation alert to Telegram
+
+    Args:
+        container_name: Name of the container with memory violation
+        memory_percentage: Current memory usage percentage
+        threshold: Memory threshold that was violated
+
+    Returns:
+        bool: True if alert was sent successfully, False otherwise
+    """
+    formatted_message = _create_memory_alarm_message(container_name, memory_percentage, threshold)
     return _send_message(formatted_message)

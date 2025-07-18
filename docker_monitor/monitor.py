@@ -1,7 +1,7 @@
 import docker
 import schedule
 from .config import DockerMonitorConfig
-from telegrambot.sender import send_resource_alert
+from telegrambot.sender import send_cpu_alarm, send_memory_alert, send_resource_alert
 from datetime import datetime
 
 
@@ -83,6 +83,12 @@ class DockerMonitor:
 
     def _do_monitor(self):
         try:
+            # Add clear cycle separator with timestamp
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"\n{'=' * 80}")
+            print(f"🔄 MONITORING CYCLE - {current_time}")
+            print(f"{'=' * 80}")
+
             containers = self.client.containers.list()
             print(f"📊 Found {len(containers)} containers")
 
@@ -112,14 +118,22 @@ class DockerMonitor:
                         mem_stats = [mem_value["memory_percent_value"] for mem_value in stats]
                         cpu = sum(cpu_stats) / len(cpu_stats)
                         mem = sum(mem_stats) / len(mem_stats)
-                        if self.config.cpu_alarm_threshold < cpu or self.config.memory_alarm_threshold < mem:
-                            send_resource_alert(container.name, str(cpu), str(mem))
+                        if self.config.cpu_alarm_threshold < cpu and self.config.memory_alarm_threshold < mem:
+                            send_resource_alert(container.name, str(cpu), str(mem), self.config.cpu_alarm_threshold, self.config.memory_alarm_threshold)
+                        elif self.config.cpu_alarm_threshold < cpu:
+                            send_cpu_alarm(container.name, cpu, self.config.cpu_alarm_threshold)
+                        elif self.config.memory_alarm_threshold < mem:
+                            send_memory_alert(container.name, mem, self.config.memory_alarm_threshold)
                         self.decoded_stats_per_container[container.name]["stats"] = [decoded_stats]
                         self.decoded_stats_per_container[container.name]["time"] = time
                     else:
                         self.decoded_stats_per_container[container.name]["stats"].append(decoded_stats)
                 except Exception as e:
                     print(f"⚠️  Error getting stats for {container.name}: {e}")
+
+            # Add cycle completion indicator
+            print(f"✅ Cycle completed at {current_time}")
+            print(f"{'=' * 80}\n")
 
         except Exception as e:
             print(f"❌ Error monitoring containers: {e}")
