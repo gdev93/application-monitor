@@ -7,24 +7,16 @@ from datetime import datetime
 
 def _format_stats_output(decoded_stats):
     """Format decoded stats for console output"""
-    output = []
-    output.append(f"Container: {decoded_stats.get('container_name', 'Unknown')}")
-    output.append(f"ID: {decoded_stats.get('container_id', 'Unknown')}")
-    output.append(f"CPU: {decoded_stats.get('cpu_percent', 'N/A')}")
-    output.append(
-        f"Memory: {decoded_stats.get('memory_usage', 'N/A')} / {decoded_stats.get('memory_limit', 'N/A')} ({decoded_stats.get('memory_percent', 'N/A')})")
+    output = [f"Container: {decoded_stats.get('container_name', 'Unknown')}",
+              f"ID: {decoded_stats.get('container_id', 'Unknown')}", f"CPU: {decoded_stats.get('cpu_percent', 'N/A')}",
+              f"Memory: {decoded_stats.get('memory_usage', 'N/A')} / {decoded_stats.get('memory_limit', 'N/A')} ({decoded_stats.get('memory_percent', 'N/A')})"]
     return "\n".join(output)
 
 
 def _decode_container_stats(stats):
     """Decode and format Docker container stats for better readability"""
-    decoded = {}
-
-    # Basic container info
-    decoded['container_id'] = stats.get('id', 'Unknown')[:12]  # Short ID
-    decoded['timestamp'] = stats.get('read', 'Unknown')
-    decoded['container_name'] = stats.get('name', 'Unknown')
-
+    decoded = {'container_id': stats.get('id', 'Unknown')[:12], 'timestamp': stats.get('read', 'Unknown'),
+               'container_name': stats.get('name', 'Unknown')}
     # CPU Stats
     cpu_stats = stats.get('cpu_stats', {})
     precpu_stats = stats.get('precpu_stats', {})
