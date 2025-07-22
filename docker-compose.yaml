@@ -3,11 +3,12 @@ services:
     build: .
     container_name: application-monitor
     restart: unless-stopped
-
+    ports:
+      - "127.0.0.1:5000:5000"
     # Environment variables
     environment:
-      - INTERVAL_SECS=10
-      - CPU_ALARM_THRESHOLD=0
+      - INTERVAL_SECS=20
+      - CPU_ALARM_THRESHOLD=40
       - MEMORY_ALARM_THRESHOLD=75
       - TIME_ZONE=UTC
       - DOCKER_SOCKET_PATH=var/host/run/docker.sock

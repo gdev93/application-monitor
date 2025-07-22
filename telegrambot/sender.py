@@ -19,6 +19,20 @@ class ParseMode:
     HTML = 'HTML'
 
 
+def _format_stats_for_telegram(stats_data: dict) -> str:
+
+    if not stats_data:
+        formatted_message = "No container stats available"
+    else:
+        formatted_message = "📊 Container Stats:\n\n"
+        for container, stats in stats_data.items():
+            formatted_message += f"🐳 {container}:\n"
+            formatted_message += f"  CPU: {stats.get('cpu_percent', 'N/A')}\n"
+            formatted_message += f"  Memory: {stats.get('memory_percent', 'N/A')}\n\n"
+
+    return formatted_message
+
+
 def _escape_markdown_v2(text: str) -> str:
     """
     Escape special Markdown V2 characters for Telegram
@@ -144,8 +158,8 @@ def _create_memory_alarm_message(container_name: str, memory_percentage: float, 
     return formatted_message
 
 
-
-def _create_resource_alert_message(container_name: str, cpu_percentage: str, mem_percentage: str, cpu_threshold: float = None, mem_threshold: float = None) -> str:
+def _create_resource_alert_message(container_name: str, cpu_percentage: str, mem_percentage: str,
+                                   cpu_threshold: float = None, mem_threshold: float = None) -> str:
     """
     Create a resource alert message with emojis and formatting
 
@@ -199,7 +213,8 @@ def _create_resource_alert_message(container_name: str, cpu_percentage: str, mem
     return formatted_message
 
 
-def send_resource_alert(container_name: str, cpu_percentage: str, mem_percentage: str, cpu_threshold: float = None, mem_threshold: float = None) -> bool:
+def send_resource_alert(container_name: str, cpu_percentage: str, mem_percentage: str, cpu_threshold: float = None,
+                        mem_threshold: float = None) -> bool:
     """
     Send a resource alert notification to Telegram
 
@@ -213,7 +228,8 @@ def send_resource_alert(container_name: str, cpu_percentage: str, mem_percentage
     Returns:
         bool: True if alert was sent successfully, False otherwise
     """
-    formatted_message = _create_resource_alert_message(container_name, cpu_percentage, mem_percentage, cpu_threshold, mem_threshold)
+    formatted_message = _create_resource_alert_message(container_name, cpu_percentage, mem_percentage, cpu_threshold,
+                                                       mem_threshold)
     return _send_message(formatted_message)
 
 
@@ -223,8 +239,8 @@ class _TelegramBot:
     """
 
     def __init__(self):
-        self.bot_token = os.environ.get('TELEGRAM_BOT_TOKEN', '5944161880:AAHGXJIHN4M8xHzPwYbbmNaNcNo9kjeUhuE')
-        self.chat_id = os.environ.get('TELEGRAM_CHAT_ID', '508229488')
+        self.bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+        self.chat_id = os.environ.get('TELEGRAM_CHAT_ID')
 
         if not self.bot_token:
             raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required")
@@ -239,7 +255,7 @@ class _TelegramBot:
             f"Telegram bot initialized with token '{self.bot_token}' and chat ID '{self.chat_id}'"
         )
 
-    def send_message(self, message: str, parse_mode: str = ParseMode.MARKDOWN_V2) -> bool:
+    def send_message(self, message: str, parse_mode: str = None, chat_id: int = None) -> bool:
         """
         Send a message to the configured chat
 
@@ -249,12 +265,15 @@ class _TelegramBot:
 
         Returns:
             bool: True if message was sent successfully, False otherwise
+            :param message:
+            :param parse_mode:
+            :param chat_id:
         """
         try:
             url = f"{self.base_url}/sendMessage"
-
+            chat_id_to_send = chat_id if chat_id else self.chat_id
             payload = {
-                "chat_id": self.chat_id,
+                "chat_id": chat_id_to_send,
                 "text": message,
             }
 
@@ -262,6 +281,7 @@ class _TelegramBot:
             if parse_mode:
                 payload["parse_mode"] = parse_mode
 
+            print(f"Sending Telegram message: {payload}")
             # Send the request
             response = requests.post(
                 url,
@@ -327,7 +347,7 @@ def _get_bot() -> Optional[_TelegramBot]:
     return _bot_instance
 
 
-def _send_message(message: str, parse_mode: str = ParseMode.MARKDOWN_V2) -> bool:
+def _send_message(message: str, parse_mode: str = ParseMode.MARKDOWN_V2, chat_id: int = None) -> bool:
     """
     Send a message to Telegram (main public function)
 
@@ -340,7 +360,7 @@ def _send_message(message: str, parse_mode: str = ParseMode.MARKDOWN_V2) -> bool
     """
     bot = _get_bot()
     if bot:
-        return bot.send_message(message, parse_mode)
+        return bot.send_message(message, parse_mode, chat_id)
     else:
         logger.warning("Telegram bot not available - message not sent")
         return False

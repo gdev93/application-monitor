@@ -1,8 +1,18 @@
+import threading
+
 import docker
 import schedule
 from .config import DockerMonitorConfig
 from telegrambot.sender import send_cpu_alarm, send_memory_alert, send_resource_alert
 from datetime import datetime
+
+
+def _compute_cpu_usage(stats):
+    cpu_stats = [cpu_value["cpu_percent_value"] for cpu_value in stats]
+    mem_stats = [mem_value["memory_percent_value"] for mem_value in stats]
+    cpu = sum(cpu_stats) / len(cpu_stats)
+    mem = sum(mem_stats) / len(mem_stats)
+    return cpu, mem
 
 
 def _format_stats_output(decoded_stats):
@@ -57,6 +67,7 @@ class DockerMonitor:
     def __init__(self):
         self.config = DockerMonitorConfig()
         self.decoded_stats_per_container = {}
+        self._lock = threading.RLock()
         try:
             # Test Docker connection first
             url = f"unix:///{self.config.docker_socket_path}"
@@ -74,61 +85,73 @@ class DockerMonitor:
             raise
 
     def _do_monitor(self):
-        try:
-            # Add clear cycle separator with timestamp
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"\n{'=' * 80}")
-            print(f"🔄 MONITORING CYCLE - {current_time}")
-            print(f"{'=' * 80}")
+        with self._lock:
+            try:
+                # Add clear cycle separator with timestamp
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                print(f"\n{'=' * 80}")
+                print(f"🔄 MONITORING CYCLE - {current_time}")
+                print(f"{'=' * 80}")
 
-            containers = self.client.containers.list()
-            print(f"📊 Found {len(containers)} containers")
+                containers = self.client.containers.list()
+                print(f"📊 Found {len(containers)} containers")
 
-            for container in containers:
-                try:
-                    stats = container.stats(stream=False, one_shot=False)
+                for container in containers:
+                    try:
+                        stats = container.stats(stream=False, one_shot=False)
+                        # Decode the stats
+                        decoded_stats = _decode_container_stats(stats)
+                        formatted_output = _format_stats_output(decoded_stats)
+                        print(f"📈 Container Stats:")
+                        print(formatted_output)
+                        print("-" * 50)
 
-                    # Decode the stats
-                    decoded_stats = _decode_container_stats(stats)
-                    formatted_output = _format_stats_output(decoded_stats)
-                    print(f"📈 Container Stats:")
-                    print(formatted_output)
-                    print("-" * 50)
+                        decoded_stats_per_container = self.decoded_stats_per_container.get(container.name)
+                        if not decoded_stats_per_container:
+                            self.decoded_stats_per_container[container.name] = {
+                                "stats": [decoded_stats],
+                                "time": datetime.now()
+                            }
+                            continue
+                        time = datetime.now()
+                        last_decoded_stats_time = decoded_stats_per_container["time"]
+                        stats = decoded_stats_per_container["stats"]
+                        if ((time - last_decoded_stats_time).total_seconds() / 60) >= self.config.analysis_period:
+                            cpu, mem = _compute_cpu_usage(stats)
+                            if self.config.cpu_alarm_threshold < cpu and self.config.memory_alarm_threshold < mem:
+                                send_resource_alert(container.name, str(cpu), str(mem), self.config.cpu_alarm_threshold,
+                                                    self.config.memory_alarm_threshold)
+                            elif self.config.cpu_alarm_threshold < cpu:
+                                send_cpu_alarm(container.name, cpu, self.config.cpu_alarm_threshold)
+                            elif self.config.memory_alarm_threshold < mem:
+                                send_memory_alert(container.name, mem, self.config.memory_alarm_threshold)
+                            self.decoded_stats_per_container[container.name]["stats"] = [decoded_stats]
+                            self.decoded_stats_per_container[container.name]["time"] = time
+                        else:
+                            self.decoded_stats_per_container[container.name]["stats"].append(decoded_stats)
+                    except Exception as e:
+                        print(f"⚠️  Error getting stats for {container.name}: {e}")
 
-                    decoded_stats_per_container = self.decoded_stats_per_container.get(container.name)
-                    if not decoded_stats_per_container:
-                        self.decoded_stats_per_container[container.name] = {
-                            "stats": [decoded_stats],
-                            "time": datetime.now()
-                        }
-                        continue
-                    time = datetime.now()
-                    last_decoded_stats_time = decoded_stats_per_container["time"]
-                    stats = decoded_stats_per_container["stats"]
-                    if ((time - last_decoded_stats_time).total_seconds() / 60) >= self.config.analysis_period:
-                        cpu_stats = [cpu_value["cpu_percent_value"] for cpu_value in stats]
-                        mem_stats = [mem_value["memory_percent_value"] for mem_value in stats]
-                        cpu = sum(cpu_stats) / len(cpu_stats)
-                        mem = sum(mem_stats) / len(mem_stats)
-                        if self.config.cpu_alarm_threshold < cpu and self.config.memory_alarm_threshold < mem:
-                            send_resource_alert(container.name, str(cpu), str(mem), self.config.cpu_alarm_threshold, self.config.memory_alarm_threshold)
-                        elif self.config.cpu_alarm_threshold < cpu:
-                            send_cpu_alarm(container.name, cpu, self.config.cpu_alarm_threshold)
-                        elif self.config.memory_alarm_threshold < mem:
-                            send_memory_alert(container.name, mem, self.config.memory_alarm_threshold)
-                        self.decoded_stats_per_container[container.name]["stats"] = [decoded_stats]
-                        self.decoded_stats_per_container[container.name]["time"] = time
-                    else:
-                        self.decoded_stats_per_container[container.name]["stats"].append(decoded_stats)
-                except Exception as e:
-                    print(f"⚠️  Error getting stats for {container.name}: {e}")
+                # Add cycle completion indicator
+                print(f"✅ Cycle completed at {current_time}")
+                print(f"{'=' * 80}\n")
 
-            # Add cycle completion indicator
-            print(f"✅ Cycle completed at {current_time}")
-            print(f"{'=' * 80}\n")
+            except Exception as e:
+                print(f"❌ Error monitoring containers: {e}")
 
-        except Exception as e:
-            print(f"❌ Error monitoring containers: {e}")
+    def get_stats(self):
+        with self._lock:
+            simple_stats = {}
+            for container in self.decoded_stats_per_container:
+                stats = self.decoded_stats_per_container[container]["stats"]
+                cpu, mem = _compute_cpu_usage(stats)
+                simple_stats[container] = {
+                    "cpu": cpu,
+                    "memory": mem,
+                    "cpu_percent": f"{cpu:.2f}%",
+                    "memory_percent": f"{mem:.2f}%"
+                }
+            return simple_stats
 
     def start_monitoring(self):
         print(f"🚀 Starting monitoring with {self.config.interval} second intervals")
