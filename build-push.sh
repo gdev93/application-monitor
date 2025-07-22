@@ -7,7 +7,7 @@ set -e  # Exit on any error
 
 # Configuration
 IMAGE_NAME="giacomodev93/application-monitor"
-DEFAULT_TAG="1.0.0"
+VERSION_FILE="VERSION"
 DOCKERFILE="Dockerfile"
 
 # Colors for output
@@ -34,7 +34,16 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Get tag from argument or use default
+# Read version from VERSION file or use provided tag
+if [ -f "$VERSION_FILE" ]; then
+    DEFAULT_TAG=$(cat "$VERSION_FILE" | tr -d '[:space:]')
+    log_info "Version read from $VERSION_FILE: $DEFAULT_TAG"
+else
+    DEFAULT_TAG="1.0.0"
+    log_warning "VERSION file not found, using default tag: $DEFAULT_TAG"
+fi
+
+# Get tag from argument or use version from file
 TAG=${1:-$DEFAULT_TAG}
 FULL_IMAGE_NAME="${IMAGE_NAME}:${TAG}"
 
