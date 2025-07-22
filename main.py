@@ -4,15 +4,18 @@ import threading
 from flask import Flask, request, jsonify
 
 from docker_monitor import DockerMonitor
-from telegrambot.sender import _format_stats_for_telegram
+from server_monitor import ServerMonitor
+from telegrambot.sender import format_stats_for_telegram
 
 docker_monitor = DockerMonitor()
+server_monitor = ServerMonitor()
 app = Flask(__name__)
 
 # Start monitoring in a separate thread to avoid blocking Flask
 monitoring_thread = threading.Thread(target=docker_monitor.start_monitoring, daemon=True)
 monitoring_thread.start()
-
+monitor_server_thread = threading.Thread(target=server_monitor.start_monitoring, daemon=True)
+monitor_server_thread.start()
 
 @app.route("/api/monitor", methods=["POST"])
 def get_stats():
@@ -38,10 +41,11 @@ def get_stats():
 
         if text == '/stats':
             stats_data = docker_monitor.get_stats()
+            server_stats = server_monitor.get_stats()
             return jsonify({
                 "method": "sendMessage",
                 "chat_id": chat_id,
-                "text": _format_stats_for_telegram(stats_data)
+                "text": format_stats_for_telegram(stats_data, server_stats)
             })
         else:
             return jsonify({

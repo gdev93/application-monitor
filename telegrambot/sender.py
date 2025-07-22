@@ -19,13 +19,37 @@ class ParseMode:
     HTML = 'HTML'
 
 
-def _format_stats_for_telegram(stats_data: dict) -> str:
+def format_stats_for_telegram(docker_stats: dict, server_stats: dict) -> str:
+    formatted_message = ""
 
-    if not stats_data:
-        formatted_message = "No container stats available"
+    # Server stats section
+    if server_stats:
+        formatted_message += "🖥️ Server Stats:\n\n"
+
+        cpu_list = server_stats.get('cpu', [])
+        memory_list = server_stats.get('memory', [])
+
+        # Calculate current or average values
+        if cpu_list:
+            cpu_value = cpu_list[-1] if len(cpu_list) == 1 else sum(cpu_list) / len(cpu_list)
+            formatted_message += f"  CPU: {cpu_value:.2f}%\n"
+        else:
+            formatted_message += f"  CPU: N/A\n"
+
+        if memory_list:
+            memory_value = memory_list[-1] if len(memory_list) == 1 else sum(memory_list) / len(memory_list)
+            formatted_message += f"  Memory: {memory_value:.2f}%\n\n"
+        else:
+            formatted_message += f"  Memory: N/A\n\n"
     else:
-        formatted_message = "📊 Container Stats:\n\n"
-        for container, stats in stats_data.items():
+        formatted_message += "🖥️ Server Stats: No server stats available\n\n"
+
+    # Container stats section
+    if not docker_stats:
+        formatted_message += "📊 Container Stats: No container stats available"
+    else:
+        formatted_message += "📊 Container Stats:\n\n"
+        for container, stats in docker_stats.items():
             formatted_message += f"🐳 {container}:\n"
             formatted_message += f"  CPU: {stats.get('cpu_percent', 'N/A')}\n"
             formatted_message += f"  Memory: {stats.get('memory_percent', 'N/A')}\n\n"

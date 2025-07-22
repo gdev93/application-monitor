@@ -7,7 +7,7 @@ from telegrambot.sender import send_cpu_alarm, send_memory_alert, send_resource_
 from datetime import datetime
 
 
-def _compute_cpu_usage(stats):
+def _compute_stats_usage(stats):
     cpu_stats = [cpu_value["cpu_percent_value"] for cpu_value in stats]
     mem_stats = [mem_value["memory_percent_value"] for mem_value in stats]
     cpu = sum(cpu_stats) / len(cpu_stats)
@@ -66,6 +66,7 @@ def _decode_container_stats(stats):
 class DockerMonitor:
     def __init__(self):
         self.config = DockerMonitorConfig()
+        self.stats_config = self.config.stats_config
         self.decoded_stats_per_container = {}
         self._lock = threading.RLock()
         try:
@@ -87,25 +88,12 @@ class DockerMonitor:
     def _do_monitor(self):
         with self._lock:
             try:
-                # Add clear cycle separator with timestamp
-                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                print(f"\n{'=' * 80}")
-                print(f"🔄 MONITORING CYCLE - {current_time}")
-                print(f"{'=' * 80}")
-
                 containers = self.client.containers.list()
-                print(f"📊 Found {len(containers)} containers")
-
                 for container in containers:
                     try:
                         stats = container.stats(stream=False, one_shot=False)
                         # Decode the stats
                         decoded_stats = _decode_container_stats(stats)
-                        formatted_output = _format_stats_output(decoded_stats)
-                        print(f"📈 Container Stats:")
-                        print(formatted_output)
-                        print("-" * 50)
-
                         decoded_stats_per_container = self.decoded_stats_per_container.get(container.name)
                         if not decoded_stats_per_container:
                             self.decoded_stats_per_container[container.name] = {
@@ -116,25 +104,22 @@ class DockerMonitor:
                         time = datetime.now()
                         last_decoded_stats_time = decoded_stats_per_container["time"]
                         stats = decoded_stats_per_container["stats"]
-                        if ((time - last_decoded_stats_time).total_seconds() / 60) >= self.config.analysis_period:
-                            cpu, mem = _compute_cpu_usage(stats)
-                            if self.config.cpu_alarm_threshold < cpu and self.config.memory_alarm_threshold < mem:
-                                send_resource_alert(container.name, str(cpu), str(mem), self.config.cpu_alarm_threshold,
-                                                    self.config.memory_alarm_threshold)
-                            elif self.config.cpu_alarm_threshold < cpu:
-                                send_cpu_alarm(container.name, cpu, self.config.cpu_alarm_threshold)
-                            elif self.config.memory_alarm_threshold < mem:
-                                send_memory_alert(container.name, mem, self.config.memory_alarm_threshold)
+                        if ((time - last_decoded_stats_time).total_seconds() / 60) >= self.stats_config.analysis_period:
+                            cpu, mem = _compute_stats_usage(stats)
+                            print(f"Container {container.name} CPU: {cpu:.2f}% Memory: {mem:.2f}%")
+                            if self.stats_config.cpu_alarm_threshold < cpu and self.stats_config.memory_alarm_threshold < mem:
+                                send_resource_alert(container.name, str(cpu), str(mem), self.stats_config.cpu_alarm_threshold,
+                                                    self.stats_config.memory_alarm_threshold)
+                            elif self.stats_config.cpu_alarm_threshold < cpu:
+                                send_cpu_alarm(container.name, cpu, self.stats_config.cpu_alarm_threshold)
+                            elif self.stats_config.memory_alarm_threshold < mem:
+                                send_memory_alert(container.name, mem, self.stats_config.memory_alarm_threshold)
                             self.decoded_stats_per_container[container.name]["stats"] = [decoded_stats]
                             self.decoded_stats_per_container[container.name]["time"] = time
                         else:
                             self.decoded_stats_per_container[container.name]["stats"].append(decoded_stats)
                     except Exception as e:
                         print(f"⚠️  Error getting stats for {container.name}: {e}")
-
-                # Add cycle completion indicator
-                print(f"✅ Cycle completed at {current_time}")
-                print(f"{'=' * 80}\n")
 
             except Exception as e:
                 print(f"❌ Error monitoring containers: {e}")
@@ -144,7 +129,7 @@ class DockerMonitor:
             simple_stats = {}
             for container in self.decoded_stats_per_container:
                 stats = self.decoded_stats_per_container[container]["stats"]
-                cpu, mem = _compute_cpu_usage(stats)
+                cpu, mem = _compute_stats_usage(stats)
                 simple_stats[container] = {
                     "cpu": cpu,
                     "memory": mem,
@@ -154,8 +139,8 @@ class DockerMonitor:
             return simple_stats
 
     def start_monitoring(self):
-        print(f"🚀 Starting monitoring with {self.config.interval} second intervals")
-        schedule.every(self.config.interval).seconds.do(self._do_monitor)
+        print(f"🚀 Starting docker container monitoring with {self.stats_config.interval} second intervals")
+        schedule.every(self.stats_config.interval).seconds.do(self._do_monitor)
 
         # Run the scheduler in a loop
         try:
